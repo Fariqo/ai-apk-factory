@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Pocket AI Studio & APK Builder</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background-color: #090d16; color: #e2e8f0; font-family: system-ui, -apple-system, sans-serif; }
+    .glass { background: rgba(17, 24, 39, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); }
+    textarea::-webkit-scrollbar, pre::-webkit-scrollbar { width: 4px; }
+    textarea::-webkit-scrollbar-thumb, pre::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 4px; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col pb-20">
+
+  <!-- Üst Başlık ve Durum Çubuğu -->
+  <header class="glass sticky top-0 z-30 px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <div class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse" id="statusDot"></div>
+      <h1 class="font-bold text-base tracking-wide bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
+        AI Studio → APK Pro
+      </h1>
+    </div>
+    <button onclick="toggleModal('settingsModal')" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700">
+      ⚙️ API & GitHub Ayarları
+    </button>
+  </header>
+
+  <!-- Ana İçerik -->
+  <main class="flex-1 p-3 space-y-3 max-w-2xl mx-auto w-full">
+
+    <!-- Model ve Uygulama Bilgisi -->
+    <div class="glass rounded-xl p-3 grid grid-cols-2 gap-2">
+      <div>
+        <label class="text-[11px] text-slate-400 block mb-1">AI Studio Modeli</label>
+        <select id="modelSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white">
+          <option value="gemini-2.5-flash">Gemini Flash (En Hızlı / Ekonomik)</option>
+          <option value="gemini-2.5-pro">Gemini Pro / Argon (Derin Mimari)</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-[11px] text-slate-400 block mb-1">APK Uygulama Adı</label>
+        <input id="appName" type="text" value="OtonomApp" placeholder="Örn: SuperTakvim" 
+               class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white" />
+      </div>
+    </div>
+
+    <!-- İstem (Prompt) Alanı -->
+    <div class="glass rounded-xl p-3 space-y-2">
+      <div class="flex justify-between items-center">
+        <span class="text-xs font-semibold text-blue-400">1. Ne Tür Bir Android Uygulaması İstiyorsun?</span>
+        <span id="tokenInfo" class="text-[11px] text-slate-400">Hazır</span>
+      </div>
+      <textarea id="promptInput" rows="3" 
+        placeholder="Örn: Karanlık temalı, çevrimdışı (IndexedDB) çalışan, sesli not ve gelişmiş bilimsel hesaplama modülü olan modern bir mobil uygulama yaz..."
+        class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-100 focus:outline-none focus:border-blue-500"></textarea>
+      
+      <div class="grid grid-cols-2 gap-2 pt-1">
+        <button onclick="generateAppCode(false)" id="btnGenerate"
+          class="bg-blue-600 hover:bg-blue-500 active:scale-98 transition text-white font-semibold py-2.5 px-3 rounded-lg text-xs flex items-center justify-center gap-1.5">
+          ✨ Sıfırdan Kod Üret
+        </button>
+        <button onclick="generateAppCode(true)" id="btnIterate"
+          class="bg-indigo-600 hover:bg-indigo-500 active:scale-98 transition text-white font-semibold py-2.5 px-3 rounded-lg text-xs flex items-center justify-center gap-1.5">
+          🔧 Mevcut Kodu Geliştir
+        </button>
+      </div>
+    </div>
+
+    <!-- Sekmeler: Canlı Emülatör & Kaynak Kodu -->
+    <div class="glass rounded-xl overflow-hidden flex flex-col" style="height: 430px;">
+      <div class="flex border-b border-slate-800 bg-slate-900/60 text-xs">
+        <button onclick="switchTab('preview')" id="tabPreview" class="flex-1 py-2.5 font-semibold text-blue-400 border-b-2 border-blue-400">
+          📱 Canlı Mobil Önizleme
+        </button>
+        <button onclick="switchTab('code')" id="tabCode" class="flex-1 py-2.5 font-semibold text-slate-400">
+          💻 Üretilen Kod (<span id="lineCount">0</span> satır)
+        </button>
+      </div>
+
+      <!-- Canlı Önizleme Iframe -->
+      <div id="viewPreview" class="flex-1 bg-white relative">
+        <iframe id="previewFrame" class="w-full h-full border-0" sandbox="allow-scripts allow-modals allow-forms allow-same-origin"></iframe>
+      </div>
+
+      <!-- Kod Editörü -->
+      <div id="viewCode" class="flex-1 hidden bg-slate-950 p-2">
+        <textarea id="codeEditor" oninput="updatePreviewFromEditor()" 
+          class="w-full h-full bg-transparent text-emerald-400 font-mono text-[11px] focus:outline-none resize-none"></textarea>
+      </div>
+    </div>
+
+    <!-- APK Derleme ve Senkronizasyon Paneli -->
+    <div class="glass rounded-xl p-3 space-y-2 border border-emerald-500/20">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-emerald-400">2. Bulut APK Derleme & Senkronizasyon</span>
+        <span id="buildTimer" class="text-[11px] font-mono text-amber-400"></span>
+      </div>
+      <p id="buildStatusText" class="text-[11px] text-slate-400">
+        Kodu GitHub'a senkronize eder ve bulutta imzasız/debug APK derleyip indirme bağlantısını getirir.
+      </p>
+      <div class="flex gap-2">
+        <button onclick="triggerCloudApkBuild()" id="btnBuildApk"
+          class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-4 rounded-lg text-xs transition flex items-center justify-center gap-2">
+          🚀 Tek Tıkla APK'ya Dönüştür
+        </button>
+        <a id="downloadApkBtn" href="#" target="_blank"
+          class="hidden bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 px-4 rounded-lg text-xs items-center justify-center">
+          📥 APK İndir
+        </a>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Ayarlar Modalı -->
+  <div id="settingsModal" class="fixed inset-0 bg-black/80 z-50 hidden flex items-center justify-center p-4">
+    <div class="glass rounded-2xl p-4 w-full max-w-md space-y-3 border border-slate-700">
+      <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+        <h2 class="font-bold text-sm text-white">🔑 AI Studio & GitHub Senkronizasyon Ayarları</h2>
+        <button onclick="toggleModal('settingsModal')" class="text-slate-400 hover:text-white text-sm">✕</button>
+      </div>
+      <div class="space-y-2 text-xs">
+        <div>
+          <label class="text-slate-400 block mb-1">Google AI Studio API Anahtarı (`AIza...`)</label>
+          <input id="cfgGeminiKey" type="password" placeholder="AIzaSy..." class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white" />
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">GitHub Personal Access Token (`ghp_...` - repo & workflow izni)</label>
+          <input id="cfgGithubToken" type="password" placeholder="ghp_..." class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white" />
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-slate-400 block mb-1">GitHub Kullanıcı Adı</label>
+            <input id="cfgGithubOwner" type="text" placeholder="kullaniciadi" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white" />
+          </div>
+          <div>
+            <label class="text-slate-400 block mb-1">Repo Adı</label>
+            <input id="cfgGithubRepo" type="text" placeholder="ai-apk-factory" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white" />
+          </div>
+        </div>
+      </div>
+      <button onclick="saveSettings()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2 rounded-lg text-xs">
+        Kaydet ve Kapat
+      </button>
+    </div>
+  </div>
+
+  <script>
+    // Ayarları LocalStorage üzerinden yükle
+    const state = {
+      geminiKey: localStorage.getItem('cfg_gemini_key') || '',
+      ghToken: localStorage.getItem('cfg_gh_token') || '',
+      ghOwner: localStorage.getItem('cfg_gh_owner') || '',
+      ghRepo: localStorage.getItem('cfg_gh_repo') || ''
+    };
+
+    document.getElementById('cfgGeminiKey').value = state.geminiKey;
+    document.getElementById('cfgGithubToken').value = state.ghToken;
+    document.getElementById('cfgGithubOwner').value = state.ghOwner;
+    document.getElementById('cfgGithubRepo').value = state.ghRepo;
+
+    function toggleModal(id) {
+      document.getElementById(id).classList.toggle('hidden');
+    }
+
+    function saveSettings() {
+      state.geminiKey = document.getElementById('cfgGeminiKey').value.trim();
+      state.ghToken = document.getElementById('cfgGithubToken').value.trim();
+      state.ghOwner = document.getElementById('cfgGithubOwner').value.trim();
+      state.ghRepo = document.getElementById('cfgGithubRepo').value.trim();
+      localStorage.setItem('cfg_gemini_key', state.geminiKey);
+      localStorage.setItem('cfg_gh_token', state.ghToken);
+      localStorage.setItem('cfg_gh_owner', state.ghOwner);
+      localStorage.setItem('cfg_gh_repo', state.ghRepo);
+      toggleModal('settingsModal');
+    }
+
+    function switchTab(tab) {
+      const isPreview = tab === 'preview';
+      document.getElementById('viewPreview').classList.toggle('hidden', !isPreview);
+      document.getElementById('viewCode').classList.toggle('hidden', isPreview);
+      document.getElementById('tabPreview').className = isPreview
+        ? 'flex-1 py-2.5 font-semibold text-blue-400 border-b-2 border-blue-400'
+        : 'flex-1 py-2.5 font-semibold text-slate-400';
+      document.getElementById('tabCode').className = !isPreview
+        ? 'flex-1 py-2.5 font-semibold text-blue-400 border-b-2 border-blue-400'
+        : 'flex-1 py-2.5 font-semibold text-slate-400';
+    }
+
+    function updatePreviewFromEditor() {
+      const code = document.getElementById('codeEditor').value;
+      document.getElementById('previewFrame').srcdoc = code;
+      document.getElementById('lineCount').innerText = code.split('\n').length;
+    }
+
+    // 1. Google AI Studio API ile Doğrudan Mobil Uygulama Kodu Üretimi
+    async function generateAppCode(isIteration) {
+      if (!state.geminiKey) {
+        toggleModal('settingsModal');
+        return alert('Lütfen önce Google AI Studio API anahtarınızı girin.');
+      }
+      const prompt = document.getElementById('promptInput').value.trim();
+      if (!prompt) return alert('Lütfen yapılacak uygulamayı tarif edin.');
+
+      const model = document.getElementById('modelSelect').value;
+      const currentCode = document.getElementById('codeEditor').value;
+      const tokenInfo = document.getElementById('tokenInfo');
+      tokenInfo.innerText = '⏳ AI Studio kod üretiyor...';
+
+      const systemInstruction = `Sen kıdemli bir Android WebView / Capacitor uygulama mimarısın.
+Kullanıcının istediği uygulamayı TEK BİR eksiksiz, modern, mobil uyumlu (responsive, dokunmatik dostu, karanlık mod destekli) HTML5 dosyası (TailwindCSS ve Vanilla JS gömülü) olarak üret.
+SADECE geçerli HTML kodunu döndür. Markdown (\`\`\`html) blokları KULLANMA, doğrudan <!DOCTYPE html> ile başla ve </html> ile bitir.`;
+
+      const userContents = isIteration && currentCode
+        ? `Mevcut uygulama kodu:\n${currentCode}\n\nİstenen yeni özellik veya düzeltme:\n${prompt}`
+        : prompt;
+
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${state.geminiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemInstruction }] },
+            contents: [{ role: 'user', parts: [{ text: userContents }] }],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 65536 }
+          })
+        });
+
+        const data = await res.json();
+        if (data.error) throw new Error(data.error.message);
+
+        let rawHtml = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        rawHtml = rawHtml.replace(/^```html\s*/i, '').replace(/```\s*$/i, '').trim();
+
+        document.getElementById('codeEditor').value = rawHtml;
+        updatePreviewFromEditor();
+
+        const usage = data.usageMetadata;
+        tokenInfo.innerText = usage
+          ? `✅ Girdi: ${usage.promptTokenCount} | Çıktı: ${usage.candidatesTokenCount} token`
+          : '✅ Kod Hazır';
+      } catch (err) {
+        tokenInfo.innerText = '❌ Hata oluştu';
+        alert('AI Studio API Hatası: ' + err.message);
+      }
+    }
+
+    // UTF-8 güvenli Base64 kodlayıcı (GitHub API için)
+    function toBase64UTF8(str) {
+      return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode('0x' + p1)));
+    }
+
+    // 2. GitHub'a Senkronize Et ve Bulut APK Derlemesini Başlat
+    async function triggerCloudApkBuild() {
+      if (!state.ghToken || !state.ghOwner || !state.ghRepo) {
+        toggleModal('settingsModal');
+        return alert('Lütfen GitHub Token, Kullanıcı Adı ve Repo bilgilerinizi girin.');
+      }
+
+      const code = document.getElementById('codeEditor').value.trim();
+      if (!code) return alert('Önce APK yapılacak uygulama kodunu üretin.');
+
+      const statusEl = document.getElementById('buildStatusText');
+      const downloadBtn = document.getElementById('downloadApkBtn');
+      downloadBtn.classList.add('hidden');
+
+      const baseApi = `https://api.github.com/repos/${state.ghOwner}/${state.ghRepo}`;
+      const headers = {
+        'Authorization': `Bearer ${state.ghToken}`,
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json'
+      };
+
+      try {
+        statusEl.innerText = '🔄 1/3: Kod dist/index.html olarak GitHub ile senkronize ediliyor...';
+
+        // Mevcut dosya SHA değerini kontrol et
+        let sha = undefined;
+        const checkRes = await fetch(`${baseApi}/contents/dist/index.html`, { headers });
+        if (checkRes.ok) {
+          const fileData = await checkRes.json();
+          sha = fileData.sha;
+        }
+
+        // Kodu GitHub'a yaz
+        const putRes = await fetch(`${baseApi}/contents/dist/index.html`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({
+            message: 'AI Studio Mobile Sync: dist/index.html güncellendi',
+            content: toBase64UTF8(code),
+            ...(sha ? { sha } : {})
+          })
+        });
+        if (!putRes.ok) throw new Error('Dosya GitHub reposuna yazılamadı.');
+
+        statusEl.innerText = '⚙️ 2/3: GitHub Actions APK derleyicisi tetikleniyor...';
+        const appName = document.getElementById('appName').value.trim() || 'AIStudioApp';
+        const cleanId = 'com.aistudio.' + appName.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+        const dispatchRes = await fetch(`${baseApi}/actions/workflows/build-apk.yml/dispatches`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            ref: 'main',
+            inputs: { app_name: appName, app_id: cleanId }
+          })
+        });
+        if (!dispatchRes.ok) throw new Error('Workflow tetiklenemedi. build-apk.yml dosyasının main dalında olduğundan emin olun.');
+
+        statusEl.innerText = '🔨 3/3: Bulutta APK derleniyor (~60-90 sn)... Otomatik kontrol ediliyor.';
+        pollLatestRelease(baseApi, headers);
+      } catch (err) {
+        statusEl.innerText = '❌ Derleme Hatası: ' + err.message;
+      }
+    }
+
+    // 3. APK Çıktısını Otomatik Takip Et ve İndirme Butonunu Göster
+    async function pollLatestRelease(baseApi, headers) {
+      let seconds = 0;
+      const timerEl = document.getElementById('buildTimer');
+      const statusEl = document.getElementById('buildStatusText');
+      const downloadBtn = document.getElementById('downloadApkBtn');
+
+      const interval = setInterval(async () => {
+        seconds += 5;
+        timerEl.innerText = `${seconds} sn`;
+        try {
+          const res = await fetch(`${baseApi}/releases/latest`, { headers });
+          if (res.ok) {
+            const release = await res.json();
+            const publishedTime = new Date(release.published_at).getTime();
+            // Son 2 dakika içinde yayınlanmış yeni APK varsa yakala
+            if (Date.now() - publishedTime < 120000 && release.assets?.length > 0) {
+              clearInterval(interval);
+              timerEl.innerText = 'Hazır!';
+              statusEl.innerText = `✅ ${release.name} başarıyla derlendi! Doğrudan telefonunuza indirebilirsiniz.`;
+              downloadBtn.href = release.assets[0].browser_download_url;
+              downloadBtn.classList.remove('hidden');
+              downloadBtn.classList.add('flex');
+            }
+          }
+        } catch (_) {}
+        if (seconds >= 180) {
+          clearInterval(interval);
+          timerEl.innerText = '';
+          statusEl.innerText = 'ℹ️ Süre doldu, APK durumunu GitHub Actions sekmesinden kontrol edebilirsiniz.';
+        }
+      }, 5000);
+    }
+  </script>
+</body>
+</html>
